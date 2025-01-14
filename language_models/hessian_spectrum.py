@@ -30,6 +30,7 @@ class Hessian(object):
         self.num_v = num_v
         self.num_bins = 1000
 
+        print(f"self.sample_layer: {self.sample_layer}")
 
  
         total_elements = len(self.train_data)
@@ -63,6 +64,7 @@ class Hessian(object):
         for name, param in self.model.named_parameters():
             if name not in self.sample_layer:
                 continue
+            
             if param.requires_grad:
 
                 zeros = np.zeros((self.num_v, self.m))
@@ -85,8 +87,6 @@ class Hessian(object):
 
             'we also save the inter-medium results'
             self.save_curve(total_time= time.time() - t_s, weights_layer = weights_dic, values_layer = values_dic)
-
-
 
         total_time = time.time() - t_s
 
@@ -183,7 +183,7 @@ class Hessian(object):
             values_dic = json.load(json_file)
         values_dic = {key: np.array(value) for key, value in values_dic.items()}
 
-
+        print('weights_dic', weights_dic.keys())
 
         for name in weights_dic.keys():
             weights = weights_dic[name]
@@ -201,6 +201,8 @@ class Hessian(object):
             plt.title(f'model at interation {self.ckpt_iteration}')
             plt.savefig(self.file_dir+'spectrum_'+name+'.png')
             plt.close()
+
+            print(f"saved at {self.file_dir+'spectrum_'+name+'.png'}")
 
             'log plot'
             plt.figure()

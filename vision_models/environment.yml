@@ -1,4 +1,5 @@
 name: cvmodels
+prefix: /pscratch/sd/j/jwl50/hessian-spectrum/vision_models/.pyenv
 channels:
   - pytorch
   - nvidia

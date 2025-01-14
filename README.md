@@ -32,8 +32,22 @@ conda activate gpt2
 Run the code for hessian spectrum estimation. 
 
 ```
-bash language_models/run_gpt2.sh
+cd language_models
+conda activate /pscratch/sd/j/jwl50/hessian-spectrum/language_models/.pyenv
+bash run_gpt2.sh
 ```
+
+Run the code on 4 gpus, 1 node:
+```
+torchrun --standalone --nproc_per_node=4 train_gpt2.py config/train_gpt2_small_shakespeare.py
+torchrun --standalone --nproc_per_node=4 train_gpt2.py config/train_gpt2_small_openwebtext.py
+```
+
+TODO run the code on 4 GPUs and 4 nodes:
+```
+torchrun --nnodes=4 --nproc_per_node=4 --node_rank=$NODE_RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT train_gpt2.py
+```
+Make sure to replace `$NODE_RANK`, `$MASTER_ADDR`, and `$MASTER_PORT` with appropriate values for your setup.
 
 ## Remark
 
