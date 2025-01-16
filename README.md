@@ -39,8 +39,13 @@ bash run_gpt2.sh
 
 Run the code on 4 gpus, 1 node:
 ```
-torchrun --standalone --nproc_per_node=4 train_gpt2.py config/train_gpt2_small_shakespeare.py
+torchrun --standalone --nproc_per_node=4 train_gpt2.py config/train_gpt2_nano_shakespeare.py
 torchrun --standalone --nproc_per_node=4 train_gpt2.py config/train_gpt2_small_openwebtext.py
+```
+CLRS:
+```
+torchrun --standalone --nproc_per_node=4 train_gpt2.py config/train_gpt2_nano_clrs_bfs.py
+torchrun --standalone --nproc_per_node=4 train_gpt2.py config/train_gpt2_nano_clrs_dfs.py
 ```
 
 TODO run the code on 4 GPUs and 4 nodes:
