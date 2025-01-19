@@ -151,9 +151,9 @@ if master_process:
             "dropout": dropout,
             "bias": bias,
             "flash_attn": flash_attn,
-        }
+        },
     )
-    
+
 torch.manual_seed(seed + seed_offset)
 torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
 torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
@@ -177,73 +177,79 @@ ctx = (
 data_dir = os.path.join("data", dataset)
 
 # Load data
-train_prompts = np.memmap(os.path.join(data_dir, "train_prompts.bin"), dtype=np.uint16, mode="r")
-train_targets = np.memmap(os.path.join(data_dir, "train_targets.bin"), dtype=np.uint16, mode="r")
-val_prompts = np.memmap(os.path.join(data_dir, "val_prompts.bin"), dtype=np.uint16, mode="r")
-val_targets = np.memmap(os.path.join(data_dir, "val_targets.bin"), dtype=np.uint16, mode="r")
+train_prompts = np.memmap(
+    os.path.join(data_dir, "train_prompts.bin"), dtype=np.uint16, mode="r"
+)
+train_targets = np.memmap(
+    os.path.join(data_dir, "train_targets.bin"), dtype=np.uint16, mode="r"
+)
+val_prompts = np.memmap(
+    os.path.join(data_dir, "val_prompts.bin"), dtype=np.uint16, mode="r"
+)
+val_targets = np.memmap(
+    os.path.join(data_dir, "val_targets.bin"), dtype=np.uint16, mode="r"
+)
 
 # Load metadata to get lengths
-with open(os.path.join(data_dir, "meta.pkl"), 'rb') as f:
+with open(os.path.join(data_dir, "meta.pkl"), "rb") as f:
     meta = pickle.load(f)
-prompt_lengths = meta['prompt_lengths']
-target_lengths = meta['target_lengths']
+prompt_lengths = meta["prompt_lengths"]
+target_lengths = meta["target_lengths"]
+
 
 def get_batch(split):
     # Get the appropriate data sources
     prompts = train_prompts if split == "train" else val_prompts
     targets = train_targets if split == "train" else val_targets
-    
+
     # Sample batch_size examples
     batch_sequences = []
     batch_masks = []
-    
+
     while len(batch_sequences) < batch_size:
         # Randomly select an example index
         ex_idx = torch.randint(len(prompt_lengths), (1,)).item()
         p_len = prompt_lengths[ex_idx]
         t_len = target_lengths[ex_idx]
-        
+
         # Skip if total length exceeds block size
         if p_len + t_len > block_size:
             continue
-        
+
         # Get sequences
         prompt_start = sum(prompt_lengths[:ex_idx])
         target_start = sum(target_lengths[:ex_idx])
-        prompt = prompts[prompt_start:prompt_start + p_len]
-        target = targets[target_start:target_start + t_len]
-        
+        prompt = prompts[prompt_start : prompt_start + p_len]
+        target = targets[target_start : target_start + t_len]
+
         # Convert to tensors
         prompt = torch.from_numpy(prompt.astype(np.int64))
         target = torch.from_numpy(target.astype(np.int64))
-        
+
         # Concatenate prompt and target
         sequence = torch.cat([prompt, target])
         # Create mask (0 for prompt, 1 for target tokens)
-        mask = torch.cat([
-            torch.zeros(p_len),
-            torch.ones(t_len)
-        ])
-        
+        mask = torch.cat([torch.zeros(p_len), torch.ones(t_len)])
+
         # Pad to block_size
         if sequence.size(0) < block_size:
             sequence = F.pad(sequence, (0, block_size - sequence.size(0)), value=0)
             mask = F.pad(mask, (0, block_size - mask.size(0)), value=0)
-        
+
         batch_sequences.append(sequence)
         batch_masks.append(mask)
-    
+
     # Stack batches
     batch_sequences = torch.stack(batch_sequences)
     batch_masks = torch.stack(batch_masks)
-    
+
     if device_type == "cuda":
         batch_sequences = batch_sequences.pin_memory().to(device, non_blocking=True)
         batch_masks = batch_masks.pin_memory().to(device, non_blocking=True)
     else:
         batch_sequences = batch_sequences.to(device)
         batch_masks = batch_masks.to(device)
-    
+
     return batch_sequences, batch_masks
 
 
@@ -370,42 +376,44 @@ def estimate_loss():
         total_sequences = 0
         token_correct = 0
         total_tokens = 0
-        
+
         for k in range(eval_iters):
             sequences, masks = get_batch(split)
-            targets = torch.cat([sequences[:, 1:], torch.zeros_like(sequences[:, :1])], dim=1)
-            
+            targets = torch.cat(
+                [sequences[:, 1:], torch.zeros_like(sequences[:, :1])], dim=1
+            )
+
             with ctx:
                 logits, loss = model(sequences, targets=targets, attention_mask=masks)
-                
+
             # Calculate loss
             losses[k] = loss.item()
-            
+
             # Get predictions
             pred = logits.argmax(dim=-1)  # [batch, sequence_length]
-            
+
             # Calculate accuracy only on target tokens
-            valid_tokens = (masks == 1)
-            
+            valid_tokens = masks == 1
+
             # Shift targets and masks for accuracy calculation (we predict next token)
             shifted_sequences = sequences[:, 1:]  # Remove first token
             shifted_masks = masks[:, :-1].to(torch.bool)  # Remove last mask position
             pred = pred[:, :-1]  # Remove last prediction
-            
+
             # Sequence-level accuracy (only count sequences where all tokens are correct)
             seq_correct = ((pred == shifted_sequences) | ~shifted_masks).all(dim=1)
             sequence_correct += seq_correct.sum().item()
             total_sequences += sequences.size(0)
-            
+
             # Token-level accuracy (only on target tokens)
             token_matches = (pred == shifted_sequences) & shifted_masks
             token_correct += token_matches.sum().item()
             total_tokens += shifted_masks.sum().item()
-            
+
         out[f"{split}/loss"] = losses.mean()
         out[f"{split}/sequence_accuracy"] = sequence_correct / total_sequences
         out[f"{split}/token_accuracy"] = token_correct / total_tokens
-        
+
     print(f"validation done. time used = {time.time() - t_eval}")
     model.train()
     return out
@@ -425,30 +433,37 @@ def get_lr(it):
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))  # coeff ranges 0..1
     return min_lr + coeff * (learning_rate - min_lr)
 
-best_val_loss = float('inf')  # Initialize with infinity so first loss will be better
+
+best_val_loss = float("inf")  # Initialize with infinity so first loss will be better
+
 
 def save_checkpoint(raw_model, optimizer, current_epoch, iter_num, val_loss):
     global best_val_loss
     checkpoint = {
-        'model': raw_model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'model_args': model_args,
-        'current_epoch': current_epoch,
-        'iter_num': iter_num,
-        'val_loss': val_loss,
-        'config': config
+        "model": raw_model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "model_args": model_args,
+        "current_epoch": current_epoch,
+        "iter_num": iter_num,
+        "val_loss": val_loss,
+        "config": config,
     }
 
     # Save the checkpoint
-    checkpoint_path = os.path.join(out_dir, f'ckpt_epoch_{current_epoch:.2f}_iter_{iter_num}.pt')
+    checkpoint_path = os.path.join(
+        out_dir, f"ckpt_epoch_{current_epoch:.2f}_iter_{iter_num}.pt"
+    )
     torch.save(checkpoint, checkpoint_path)
     print(f"Checkpoint saved to {checkpoint_path}")
 
     if val_loss < best_val_loss:
         best_val_loss = val_loss
-        best_checkpoint_path = os.path.join(out_dir, f'best_ckpt.pt')
+        best_checkpoint_path = os.path.join(out_dir, f"best_ckpt.pt")
         torch.save(checkpoint, best_checkpoint_path)
-        print(f"New best validation loss: {best_val_loss}. Saving checkpoint to {best_checkpoint_path}")
+        print(
+            f"New best validation loss: {best_val_loss}. Saving checkpoint to {best_checkpoint_path}"
+        )
+
 
 # logging
 
@@ -483,6 +498,7 @@ def plot_hessian():
     # hessian.get_spectrum(layer_by_layer=False)
     # hessian.load_curve(layer_by_layer=False)
 
+
 def train():
     global iter_num, X, Y, current_epoch, best_val_loss
     "the following is for training"
@@ -496,7 +512,7 @@ def train():
         # Calculate equivalent epochs
         samples_processed = iter_num * batch_size * gradient_accumulation_steps
         current_epoch = samples_processed / (len(train_prompts) - block_size)
-        
+
         if iter_num % log_interval == 0 and master_process:
             logging.info(f"iter {iter_num}: epoch {current_epoch:.2f}")
 
@@ -519,12 +535,14 @@ def train():
             )
 
             # Log to wandb
-            wandb.log({
-                **metrics,  # This will log all metrics with their original names
-                "lr": lr,
-                "epoch": current_epoch,
-                "iter": iter_num,
-            })
+            wandb.log(
+                {
+                    **metrics,  # This will log all metrics with their original names
+                    "lr": lr,
+                    "epoch": current_epoch,
+                    "iter": iter_num,
+                }
+            )
 
         if (
             master_process
@@ -542,7 +560,9 @@ def train():
 
             losses = estimate_loss()
             # save ckpt
-            save_checkpoint(raw_model, optimizer, current_epoch, iter_num, losses['val/loss'])
+            save_checkpoint(
+                raw_model, optimizer, current_epoch, iter_num, losses["val/loss"]
+            )
 
         if iter_num == 0 and eval_only:
             break
@@ -555,15 +575,21 @@ def train():
                 )
             with ctx:
                 sequences, masks = get_batch("train")
-                logits, loss = model(sequences, targets=torch.cat([sequences[:, 1:], torch.zeros_like(sequences[:, :1])], dim=1), attention_mask=masks)
+                logits, loss = model(
+                    sequences,
+                    targets=torch.cat(
+                        [sequences[:, 1:], torch.zeros_like(sequences[:, :1])], dim=1
+                    ),
+                    attention_mask=masks,
+                )
                 loss = loss / gradient_accumulation_steps
-            
+
             # immediately async prefetch next batch
             X, Y = get_batch("train")
-            
+
             # backward pass
             scaler.scale(loss).backward()
-            
+
         # clip the gradient
         if grad_clip != 0.0:
             scaler.unscale_(optimizer)
@@ -596,11 +622,13 @@ def train():
 
             # Log training metrics
             if master_process:
-                wandb.log({
-                    "train/iter_loss": lossf,
-                    "perf/mfu": running_mfu * 100,
-                    "perf/iter_time_ms": dt * 1000,
-                })
+                wandb.log(
+                    {
+                        "train/iter_loss": lossf,
+                        "perf/mfu": running_mfu * 100,
+                        "perf/iter_time_ms": dt * 1000,
+                    }
+                )
 
         iter_num += 1
         local_iter_num += 1
@@ -611,14 +639,14 @@ def train():
 
     if ddp:
         destroy_process_group()
-    
+
     # Close wandb run
     if master_process:
         wandb.finish()
 
 
-# plot_hessian()
+plot_hessian()
 
 train()
 
-# plot_hessian()
+plot_hessian()
