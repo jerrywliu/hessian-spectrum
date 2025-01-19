@@ -10,6 +10,9 @@ min_lr = 6e-5
 weight_decay = 1e-1
 dropout = 0.0
 
+# Epochs
+epochs = 10
+
 # GPT-Nano
 n_layer = 6
 n_head = 6
