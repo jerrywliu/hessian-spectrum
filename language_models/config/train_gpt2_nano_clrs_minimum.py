@@ -1,5 +1,5 @@
 # data
-dataset = "clrs/bfs"
+dataset = "clrs/minimum"
 batch_size = 16
 block_size = 256
 gradient_accumulation_steps = 4
@@ -55,6 +55,6 @@ sample_layer = [
 ]
 
 
-comment = "gptnano_clrs_bfs"  # only used in tensorboard and hessian class
+comment = "gptnano_clrs_minimum"  # only used in tensorboard and hessian class
 save_dir = "log_gpt2/" + comment
 out_dir = "out-gpt2/" + comment  # save ckpt
